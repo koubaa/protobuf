@@ -44,6 +44,30 @@ build_cpp() {
 build_cpp_distcheck() {
   ./autogen.sh
   ./configure
+  make dist
+
+  # List all files that should be included in the distribution package.
+  git ls-files | grep "^\(java\|python\|objectivec\|csharp\|js\|ruby\|cmake\|examples\)" |\
+      grep -v ".gitignore" | grep -v "java/compatibility_tests" > dist.lst
+  # Unzip the dist tar file.
+  DIST=`ls *.tar.gz`
+  tar -xf $DIST
+  cd ${DIST//.tar.gz}
+  # Check if every file exists in the dist tar file.
+  FILES_MISSING=""
+  for FILE in $(<../dist.lst); do
+    if ! file $FILE &>/dev/null; then
+      echo "$FILE is not found!"
+      FILES_MISSING="$FILE $FILES_MISSING"
+    fi
+  done
+  cd ..
+  if [ ! -z "$FILES_MISSING" ]; then
+    echo "Missing files in EXTRA_DIST: $FILES_MISSING"
+    exit 1
+  fi
+
+  # Do the regular dist-check for C++.
   make distcheck -j2
 }
 
@@ -63,7 +87,7 @@ build_csharp() {
     sudo apt-get install -qq mono-devel referenceassemblies-pcl nunit
     
     # Then install the dotnet SDK as per Ubuntu 14.04 instructions on dot.net.
-    sudo sh -c 'echo "deb [arch=amd64] https://apt-mo.trafficmanager.net/repos/dotnet/ trusty main" > /etc/apt/sources.list.d/dotnetdev.list'
+    sudo sh -c 'echo "deb [arch=amd64] https://apt-mo.trafficmanager.net/repos/dotnet-release/ trusty main" > /etc/apt/sources.list.d/dotnetdev.list'
     sudo apt-key adv --keyserver apt-mo.trafficmanager.net --recv-keys 417A0893
     sudo apt-get update -qq
     sudo apt-get install -qq dotnet-dev-1.0.0-preview2-003121
@@ -103,13 +127,10 @@ build_golang() {
 use_java() {
   version=$1
   case "$version" in
-    jdk6)
-      on_travis sudo apt-get install openjdk-6-jdk
-      export PATH=/usr/lib/jvm/java-6-openjdk-amd64/bin:$PATH
-      ;;
     jdk7)
       on_travis sudo apt-get install openjdk-7-jdk
       export PATH=/usr/lib/jvm/java-7-openjdk-amd64/bin:$PATH
+      export JAVA_HOME=/usr/lib/jvm/java-7-openjdk-amd64
       ;;
     oracle7)
       if [ "$TRAVIS" == "true" ]; then
@@ -120,6 +141,7 @@ use_java() {
         yes | sudo apt-get install oracle-java7-installer
       fi;
       export PATH=/usr/lib/jvm/java-7-oracle/bin:$PATH
+      export JAVA_HOME=/usr/lib/jvm/java-7-openjdk-amd64
       ;;
   esac
 
@@ -130,6 +152,7 @@ use_java() {
 
   which java
   java -version
+  $MVN -version
 }
 
 # --batch-mode supresses download progress output that spams the logs.
@@ -162,10 +185,6 @@ build_javanano() {
   cd javanano && $MVN test && cd ..
 }
 
-build_java_jdk6() {
-  use_java jdk6
-  build_java jdk6
-}
 build_java_jdk7() {
   use_java jdk7
   build_java_with_conformance_tests
@@ -175,10 +194,6 @@ build_java_oracle7() {
   build_java oracle7
 }
 
-build_javanano_jdk6() {
-  use_java jdk6
-  build_javanano
-}
 build_javanano_jdk7() {
   use_java jdk7
   build_javanano
@@ -320,11 +335,10 @@ build_javascript() {
 if [ "$#" -ne 1 ]; then
   echo "
 Usage: $0 { cpp |
+            cpp_distcheck |
             csharp |
-            java_jdk6 |
             java_jdk7 |
             java_oracle7 |
-            javanano_jdk6 |
             javanano_jdk7 |
             javanano_oracle7 |
             objectivec_ios |
